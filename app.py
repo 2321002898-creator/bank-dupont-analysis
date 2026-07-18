@@ -15,7 +15,7 @@ REQUIRED_COLUMNS = [
     "TotalDeposit", "Group1", "Group2", "Group3", "Group4", "Group5", "Provision",
 ]
 MANUAL_DEFAULTS = {
-    "Bank": "Ngân hàng đang phân tích", "LNST": 1000.0, "NetInterestIncome": 5000.0,
+    "Bank": "", "LNST": 1000.0, "NetInterestIncome": 5000.0,
     "TotalAssets": 200000.0, "Equity": 20000.0, "CASA": 30000.0,
     "TotalDeposit": 150000.0, "Group1": 120000.0, "Group2": 3000.0,
     "Group3": 1200.0, "Group4": 800.0, "Group5": 500.0, "Provision": 3000.0,
@@ -84,9 +84,10 @@ def calculate_metrics(bank_data):
     return {"total_loan": total_loan, "bad_debt": bad_debt, "roa": roa, "roe": roe, "nim": nim, "casa_ratio": casa_ratio, "npl": npl, "overdue": overdue, "coverage": coverage, "em": em}
 
 
-def render_bank_analysis(bank_name, bank_data):
+def render_bank_analysis(bank_name, bank_data, instance_key=None):
     """Render đầy đủ dashboard hiện hữu cho một ngân hàng độc lập."""
     metrics = calculate_metrics(bank_data)
+    chart_key = instance_key or bank_name
     st.markdown(f'<h2 class="dashboard-title">{bank_name}</h2>', unsafe_allow_html=True)
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     kpi1.metric("ROA", f"{metrics['roa'] * 100:.2f}%", score_comment(metrics["roa"], .02, .01, ("Hiệu quả tài sản tốt", "Mức trung bình", "Hiệu quả thấp")))
@@ -103,7 +104,7 @@ def render_bank_analysis(bank_name, bank_data):
         pie.update_traces(textposition="inside", textinfo="percent+label")
         pie.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend_title_text="")
         # Key theo tên ngân hàng giúp nhiều tab có biểu đồ cùng cấu hình không trùng ID.
-        st.plotly_chart(pie, use_container_width=True, key=f"loan_groups_{bank_name}")
+        st.plotly_chart(pie, use_container_width=True, key=f"loan_groups_{chart_key}")
     with dupont_col:
         st.subheader("Mô hình Dupont")
         tree = go.Figure()
@@ -112,7 +113,7 @@ def render_bank_analysis(bank_name, bank_data):
             tree.add_shape(type="line", x0=.5, y0=.92, x1=x_end, y1=.43, line=dict(color="#9aabbc", width=2))
         tree.add_annotation(x=.5, y=.67, text="ROE = ROA × Đòn bẩy tài chính", showarrow=False, font=dict(size=15, color="#425466"))
         tree.update_layout(height=410, margin=dict(l=10, r=10, t=10, b=25), showlegend=False, xaxis=dict(visible=False, range=[0, 1]), yaxis=dict(visible=False, range=[0, 1.2]))
-        st.plotly_chart(tree, use_container_width=True, key=f"dupont_tree_{bank_name}")
+        st.plotly_chart(tree, use_container_width=True, key=f"dupont_tree_{chart_key}")
 
     st.divider()
     summary_col, alert_col = st.columns([1.35, 1], gap="large")
@@ -123,7 +124,7 @@ def render_bank_analysis(bank_name, bank_data):
     with summary_col:
         st.subheader("Bảng tổng hợp chỉ số")
         summary = pd.DataFrame({"Chỉ số": ["Tổng dư nợ", "Nợ quá hạn", "Tỷ lệ NPL", "Bao phủ nợ xấu", "Đòn bẩy tài chính (EM)"], "Giá trị": [f"{metrics['total_loan']:,.2f}", f"{metrics['overdue']:.2f}%", f"{metrics['npl']:.2f}%", f"{metrics['coverage']:.2f}%", f"{metrics['em']:.2f}x"]})
-        st.dataframe(summary, use_container_width=True, hide_index=True, column_config={"Chỉ số": st.column_config.TextColumn(width="large")}, key=f"summary_table_{bank_name}")
+        st.dataframe(summary, use_container_width=True, hide_index=True, column_config={"Chỉ số": st.column_config.TextColumn(width="large")}, key=f"summary_table_{chart_key}")
 
 
 def render_comparison_overview(selected_banks, bank_lookup):
@@ -145,10 +146,11 @@ def render_comparison_overview(selected_banks, bank_lookup):
 
 
 def render_manual_form():
-    """Form nhập liệu cũ, chỉ sử dụng khi chưa có dữ liệu upload."""
+    """Form nhập tay có thể phân tích thử hoặc thêm ngân hàng vào dataset chung."""
     with st.form("bank_input_form", border=False):
-        st.markdown('<p class="form-title">📥 FORM NHẬP DỮ LIỆU</p>', unsafe_allow_html=True)
-        st.markdown('<p class="form-note">Cập nhật số liệu đầu vào rồi nhấn <b>Phân tích</b> để làm mới dashboard.</p>', unsafe_allow_html=True)
+        st.markdown('<p class="form-title">📥 FORM NHẬP DỮ LIỆU THỦ CÔNG</p>', unsafe_allow_html=True)
+        st.markdown('<p class="form-note">Nhập thông tin ngân hàng mới để phân tích thử hoặc bổ sung vào dataset tích lũy.</p>', unsafe_allow_html=True)
+        bank_name = st.text_input("Tên ngân hàng", value=MANUAL_DEFAULTS["Bank"], placeholder="Ví dụ: Vietcombank")
         business_col, funding_col, credit_col = st.columns(3, gap="large")
         with business_col:
             st.markdown('<div class="input-group"><p class="input-group-title">💼 Kinh doanh</p>', unsafe_allow_html=True)
@@ -177,14 +179,16 @@ def render_manual_form():
                 group5 = st.number_input("Nhóm 5", value=MANUAL_DEFAULTS["Group5"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
                 provision = st.number_input("DPRR", value=MANUAL_DEFAULTS["Provision"], min_value=0.01, format="%.2f", help="Dự phòng rủi ro tín dụng", step=NUMBER_INPUT_STEP)
             st.markdown("</div>", unsafe_allow_html=True)
-        _, action_col, _ = st.columns([2, 1, 2])
-        with action_col:
-            submitted = st.form_submit_button("PHÂN TÍCH", use_container_width=True, type="primary")
+        preview_col, add_col = st.columns(2)
+        with preview_col:
+            preview_requested = st.form_submit_button("🔍 PHÂN TÍCH THỬ", use_container_width=True)
+        with add_col:
+            add_requested = st.form_submit_button("➕ THÊM NGÂN HÀNG VÀO DATASET", use_container_width=True, type="primary")
 
-    manual_data = {"Bank": MANUAL_DEFAULTS["Bank"], "LNST": lnst, "NetInterestIncome": nii, "TotalAssets": total_assets, "Equity": equity, "CASA": casa, "TotalDeposit": total_deposit, "Group1": group1, "Group2": group2, "Group3": group3, "Group4": group4, "Group5": group5, "Provision": provision}
-    if submitted:
+    manual_data = {"Bank": bank_name.strip(), "LNST": lnst, "NetInterestIncome": nii, "TotalAssets": total_assets, "Equity": equity, "CASA": casa, "TotalDeposit": total_deposit, "Group1": group1, "Group2": group2, "Group3": group3, "Group4": group4, "Group5": group5, "Provision": provision}
+    if preview_requested:
         st.toast("Dashboard đã được cập nhật.", icon="✅")
-    return manual_data
+    return manual_data, add_requested, preview_requested
 
 
 def load_uploaded_data(uploaded_file):
@@ -217,30 +221,76 @@ def load_uploaded_data(uploaded_file):
     return data[REQUIRED_COLUMNS].copy()
 
 
+def merge_uploaded_data(uploaded_data):
+    """Hợp nhất file upload vào master_data; tên trùng sẽ được ghi đè bởi file mới."""
+    incoming = uploaded_data.copy()
+    incoming["Bank"] = incoming["Bank"].astype(str).str.strip()
+    existing = st.session_state.master_data.copy()
+    existing["Bank"] = existing["Bank"].astype(str).str.strip()
+    overwritten = incoming["Bank"].isin(existing["Bank"]).sum()
+    # Bỏ bản ghi cũ cùng tên trước khi nối để chỉ giữ bản ghi mới từ file upload.
+    remaining = existing.loc[~existing["Bank"].isin(incoming["Bank"])]
+    st.session_state.master_data = pd.concat([remaining, incoming], ignore_index=True)[REQUIRED_COLUMNS]
+    return overwritten
+
+
+def add_manual_bank(manual_data):
+    """Kiểm tra và thêm một hàng nhập tay vào dataset chung mà không ghi đè dữ liệu cũ."""
+    bank_name = manual_data["Bank"]
+    if not bank_name:
+        st.error("Vui lòng nhập Tên ngân hàng trước khi thêm vào dataset.")
+        return False
+    existing_names = st.session_state.master_data["Bank"].astype(str).str.strip()
+    if bank_name in set(existing_names):
+        st.error(f"Ngân hàng '{bank_name}' đã tồn tại. Hãy đổi tên hoặc cập nhật qua file upload.")
+        return False
+    manual_row = pd.DataFrame([manual_data], columns=REQUIRED_COLUMNS)
+    st.session_state.master_data = pd.concat([st.session_state.master_data, manual_row], ignore_index=True)[REQUIRED_COLUMNS]
+    st.success(f"Ngân hàng {bank_name} đã được thêm thành công vào dataset tích lũy!")
+    return True
+
+
 st.title("🏦 BankHealth Analyzer")
 st.caption("Bảng điều khiển phân tích sức khỏe tài chính ngân hàng")
 
-# Session state giữ dữ liệu sau các lần Streamlit tự chạy lại khi người dùng đổi lựa chọn.
-if "uploaded_data" not in st.session_state:
-    st.session_state.uploaded_data = None
+# Dataset duy nhất cho cả file upload và dữ liệu nhập tay; không bị mất khi Streamlit rerun.
+if "master_data" not in st.session_state:
+    st.session_state.master_data = pd.DataFrame(columns=REQUIRED_COLUMNS)
 
 uploaded_file = st.file_uploader("📤 Tải dữ liệu ngân hàng", type=["xlsx", "csv"], help="Cột bắt buộc: " + ", ".join(REQUIRED_COLUMNS))
 if uploaded_file is not None:
-    st.session_state.uploaded_data = load_uploaded_data(uploaded_file)
-    st.success(f"Đã nhập thành công {len(st.session_state.uploaded_data)} ngân hàng.")
+    uploaded_data = load_uploaded_data(uploaded_file)
+    overwritten_count = merge_uploaded_data(uploaded_data)
+    st.success(f"Đã nhập {len(uploaded_data)} ngân hàng vào dataset tích lũy ({overwritten_count} ngân hàng được cập nhật).")
 
-if st.session_state.uploaded_data is None:
-    # Chế độ mặc định: chỉ phân tích một ngân hàng từ form nhập tay.
-    manual_data = render_manual_form()
-    render_bank_analysis(manual_data["Bank"], manual_data)
+# Form luôn hiển thị, kể cả sau khi upload, để người dùng có thể tiếp tục bổ sung dữ liệu thủ công.
+manual_data, add_requested, preview_requested = render_manual_form()
+if add_requested:
+    add_manual_bank(manual_data)
+
+if preview_requested:
+    preview_name = manual_data["Bank"] or "Ngân hàng đang phân tích"
+    st.markdown("### Kết quả phân tích thử")
+    render_bank_analysis(preview_name, manual_data, instance_key="manual_preview")
+
+master_data = st.session_state.master_data
+if master_data.empty:
+    if not preview_requested:
+        st.info("Dataset hiện trống. Hãy tải file hoặc nhập tay rồi nhấn “Thêm ngân hàng vào dataset”.")
 else:
-    uploaded_data = st.session_state.uploaded_data
-    bank_names = uploaded_data["Bank"].astype(str).tolist()
+    # Cả dữ liệu upload và nhập tay đều được lấy từ cùng một danh sách ngân hàng.
+    bank_names = master_data["Bank"].astype(str).unique().tolist()
+    if st.session_state.get("primary_bank") not in bank_names:
+        st.session_state.primary_bank = bank_names[0]
     st.markdown("### Chọn ngân hàng để phân tích")
     primary_bank = st.selectbox("Ngân hàng chính", bank_names, key="primary_bank")
-    additional_banks = st.multiselect("Thêm ngân hàng để so sánh", [bank for bank in bank_names if bank != primary_bank], key="additional_banks", placeholder="Chọn thêm ngân hàng")
+    comparison_options = [bank for bank in bank_names if bank != primary_bank]
+    # Lọc session state cũ để không giữ lựa chọn bị trùng với ngân hàng chính vừa đổi.
+    if "additional_banks" in st.session_state:
+        st.session_state.additional_banks = [bank for bank in st.session_state.additional_banks if bank in comparison_options]
+    additional_banks = st.multiselect("Thêm ngân hàng để so sánh", comparison_options, key="additional_banks", placeholder="Chọn thêm ngân hàng")
     selected_banks = [primary_bank, *additional_banks]
-    bank_lookup = {str(row["Bank"]): row for _, row in uploaded_data.iterrows()}
+    bank_lookup = {str(row["Bank"]): row for _, row in master_data.iterrows()}
 
     # Từ hai ngân hàng trở lên, tab overview luôn được đặt đầu tiên.
     if len(selected_banks) >= 2:
