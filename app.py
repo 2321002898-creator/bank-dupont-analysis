@@ -331,10 +331,11 @@ with st.sidebar:
                 st.session_state.pop("additional_banks", None)
                 st.rerun()
 
-st.title("🏛️ Phân tích chỉ số tài chính và rủi ro ngân hàng")
-st.caption("BankHealth Analyzer · Bảng điều khiển theo dõi hiệu quả và rủi ro tín dụng")
 if BRANDING_IMAGE.is_file():
     st.image(str(BRANDING_IMAGE), use_container_width=True)
+
+st.title("🏛️ BankHealth Analyzer")
+st.caption("Bảng điều khiển theo dõi hiệu quả và rủi ro tín dụng")
 
 master_data = st.session_state.master_data
 if master_data.empty:
