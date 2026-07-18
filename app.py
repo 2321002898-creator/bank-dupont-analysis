@@ -4,14 +4,25 @@ Chạy ứng dụng: streamlit run app.py
 """
 
 import hashlib
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+# Lệnh Streamlit đầu tiên: metadata trình duyệt và sidebar luôn mở khi truy cập ứng dụng.
+st.set_page_config(
+    page_title="Phân tích chỉ số tài chính và rủi ro ngân hàng",
+    page_icon="🏛️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 NUMBER_INPUT_STEP = 1000.0
+PROJECT_ROOT = Path(__file__).resolve().parent
+# Dùng đường dẫn tuyệt đối từ thư mục mã nguồn để hoạt động nhất quán ở local và khi deploy.
+BRANDING_IMAGE = PROJECT_ROOT / "asset" / "bg.jpg"
 REQUIRED_COLUMNS = [
     "Bank", "LNST", "NetInterestIncome", "TotalAssets", "Equity", "CASA",
     "TotalDeposit", "Group1", "Group2", "Group3", "Group4", "Group5", "Provision",
@@ -23,18 +34,20 @@ MANUAL_DEFAULTS = {
     "Group3": 1200.0, "Group4": 800.0, "Group5": 500.0, "Provision": 3000.0,
 }
 
-st.set_page_config(page_title="BankHealth Analyzer", page_icon="🏦", layout="wide", initial_sidebar_state="collapsed")
-
 st.markdown(
     """
     <style>
       [data-testid="InputInstructions"] {display: none;}
       .block-container {max-width: 1440px; padding: 1.5rem 2.25rem 3rem;}
-      [data-testid="stAppViewContainer"] {background: #f7f9fc;}
-      h1 {color: #123a63; letter-spacing: -.03em; margin-bottom: .1rem !important;}
-      div[data-testid="stMetric"] {background:#fff; border:1px solid #e2e9f2; border-radius:14px; padding:1rem 1.15rem; box-shadow:0 3px 12px rgba(32,61,92,.05);}
-      div[data-testid="stMetricLabel"] {color:#5d6b7e;}
-      div[data-testid="stMetricValue"] {color:#123a63;}
+      [data-testid="stAppViewContainer"] {background: #f4f7fb; color: #334155;}
+      [data-testid="stSidebar"] {background: linear-gradient(180deg, #082f5b 0%, #0b3d70 55%, #0f5f68 100%);}
+      [data-testid="stSidebar"] * {color: #eef6ff;}
+      [data-testid="stSidebar"] [data-testid="stDataFrame"] * {color: #334155;}
+      h1 {color:#083b6d; letter-spacing:-.03em; margin-bottom:.1rem !important; font-weight:800;}
+      h2, h3 {color:#0b477b;}
+      div[data-testid="stMetric"] {background:linear-gradient(135deg,#ffffff 0%,#edf5fc 100%); border:1px solid #d7e5f3; border-radius:14px; padding:1rem 1.15rem; box-shadow:0 5px 16px rgba(8,59,109,.08);}
+      div[data-testid="stMetricLabel"] {color:#475569; font-weight:600;}
+      div[data-testid="stMetricValue"] {color:#087a5a; font-weight:750;}
       div[data-testid="stForm"] {border:1px solid #dce6f1; border-radius:16px; padding:1.2rem 1.4rem 1rem; background:linear-gradient(180deg,#fff 0%,#f5f9fd 100%); box-shadow:0 4px 16px rgba(32,61,92,.04);}
       .form-title {font-size:1.08rem; font-weight:750; color:#123a63; margin:0;}
       .form-note {color:#6b7a90; margin:.15rem 0 1rem; font-size:.9rem;}
@@ -42,13 +55,33 @@ st.markdown(
       .input-group-title {font-size:.94rem; font-weight:700; color:#244d76; margin:0 0 .45rem;}
       div[data-testid="stNumberInput"] label {font-size:.84rem; color:#506176;}
       div[data-testid="stNumberInput"] input {background:#fff; border-color:#d6e1ed;}
+    div[data-testid="stFileUploader"] {color:#0f172a;}
+    div[data-testid="stFileUploader"] section {background:#fff; border-color:#d6e1ed; color:#0f172a;}
+    div[data-testid="stFileUploader"] section label,
+    div[data-testid="stFileUploader"] section p,
+    div[data-testid="stFileUploader"] section span {color:#0f172a;}
+    div[data-testid="stFileUploader"] [data-testid="stBaseButton-secondary"] {background:#eef6fb; color:#0b477b; border:1px solid #c9dcec;}
+    div[data-testid="stFileUploader"] [data-testid="stBaseButton-secondary"]:hover {background:#dfeff9; color:#083b6d;}
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] {color:#eef6ff;}
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section {background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); color:#eef6ff;}
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section label,
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section p,
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] section span {color:#eef6ff;}
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] [data-testid="stBaseButton-secondary"] {background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.28);}
+    [data-testid="stSidebar"] div[data-testid="stFileUploader"] [data-testid="stBaseButton-secondary"]:hover {background:rgba(255,255,255,.2); color:#fff;}
       div[data-testid="stFormSubmitButton"] {margin-top:.6rem;}
-      .dashboard-title {color:#123a63; margin:0 0 .7rem; font-size:1.4rem;}
+      .dashboard-title {color:#083b6d; margin:0 0 .7rem; font-size:1.4rem;}
+      .stTabs [data-baseweb="tab-list"] {gap: .7rem; border-bottom: 1px solid #d7e5f3;}
+      .stTabs [data-baseweb="tab"] {height: 44px; color:#64748b; font-weight:700; padding:0 1rem;}
+      .stTabs [data-baseweb="tab"][aria-selected="true"] {color:#083b6d; border-bottom:3px solid #18a879; background:#e8f6f0; border-radius:8px 8px 0 0;}
+      .stTabs [data-baseweb="tab-highlight"] {background-color:#18a879;}
+      [data-testid="stSidebar"] .stButton > button {background:#18a879; color:#fff; border:1px solid #40c59d; font-weight:700;}
+      [data-testid="stSidebar"] .stButton > button:hover {background:#0d8b65; border-color:#0d8b65; color:#fff;}
+      input {color: #0f172a !important;}
     </style>
     """,
     unsafe_allow_html=True,
 )
-
 
 def safe_divide(numerator, denominator):
     """Trả về 0 nếu mẫu số bằng 0."""
@@ -259,6 +292,10 @@ if "master_data" not in st.session_state:
 if "uploaded_file_signature" not in st.session_state:
     st.session_state.uploaded_file_signature = None
 
+# Logo/banner dùng cùng một asset có sẵn trong project; kiểm tra tồn tại để deploy không lỗi.
+# if BRANDING_IMAGE.is_file():
+#     st.sidebar.image(str(BRANDING_IMAGE), use_container_width=True)
+
 with st.sidebar:
     st.header("Quản lý dữ liệu")
     uploaded_file = st.file_uploader("📤 Tải dữ liệu ngân hàng", type=["xlsx", "csv"], help="Cột bắt buộc: " + ", ".join(REQUIRED_COLUMNS))
@@ -271,7 +308,7 @@ with st.sidebar:
             st.session_state.uploaded_file_signature = file_signature
             st.success(f"Đã nhập {len(uploaded_data)} ngân hàng ({overwritten_count} bản ghi được cập nhật).")
 
-    if st.button("➕ Add Manual Bank", use_container_width=True, type="primary"):
+    if st.button("+ Thêm dữ liệu thủ công", use_container_width=True, type="primary"):
         open_bank_dialog("add")
 
     st.divider()
@@ -294,8 +331,10 @@ with st.sidebar:
                 st.session_state.pop("additional_banks", None)
                 st.rerun()
 
-st.title("🏦 BankHealth Analyzer")
-st.caption("Bảng điều khiển phân tích sức khỏe tài chính ngân hàng")
+st.title("🏛️ Phân tích chỉ số tài chính và rủi ro ngân hàng")
+st.caption("BankHealth Analyzer · Bảng điều khiển theo dõi hiệu quả và rủi ro tín dụng")
+if BRANDING_IMAGE.is_file():
+    st.image(str(BRANDING_IMAGE), use_container_width=True)
 
 master_data = st.session_state.master_data
 if master_data.empty:
