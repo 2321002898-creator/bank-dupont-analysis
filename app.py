@@ -3,6 +3,8 @@
 Chạy ứng dụng: streamlit run app.py
 """
 
+import hashlib
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -145,50 +147,67 @@ def render_comparison_overview(selected_banks, bank_lookup):
     st.plotly_chart(comparison_chart, use_container_width=True)
 
 
-def render_manual_form():
-    """Form nhập tay có thể phân tích thử hoặc thêm ngân hàng vào dataset chung."""
-    with st.form("bank_input_form", border=False):
-        st.markdown('<p class="form-title">📥 FORM NHẬP DỮ LIỆU THỦ CÔNG</p>', unsafe_allow_html=True)
-        st.markdown('<p class="form-note">Nhập thông tin ngân hàng mới để phân tích thử hoặc bổ sung vào dataset tích lũy.</p>', unsafe_allow_html=True)
-        bank_name = st.text_input("Tên ngân hàng", value=MANUAL_DEFAULTS["Bank"], placeholder="Ví dụ: Vietcombank")
+def open_bank_dialog(mode, existing_data=None):
+    """Mở dialog tạo mới hoặc chỉnh sửa; các input không chiếm diện tích dashboard."""
+    is_editing = mode == "edit"
+    initial = existing_data.to_dict() if existing_data is not None else MANUAL_DEFAULTS
+    original_name = str(initial["Bank"]).strip()
+    dialog_title = f"Edit Bank: {original_name}" if is_editing else "Add New Bank"
+
+    @st.dialog(dialog_title, width="large")
+    def bank_editor():
+        st.caption("Kiểm tra số liệu bằng Preview trước khi lưu vào dataset tích lũy.")
+        bank_name = st.text_input("Tên ngân hàng", value=original_name, disabled=is_editing, key=f"dialog_bank_{mode}_{original_name}")
         business_col, funding_col, credit_col = st.columns(3, gap="large")
         with business_col:
             st.markdown('<div class="input-group"><p class="input-group-title">💼 Kinh doanh</p>', unsafe_allow_html=True)
-            business_left, business_right = st.columns(2)
-            with business_left:
-                lnst = st.number_input("LNST", value=MANUAL_DEFAULTS["LNST"], min_value=0.01, format="%.2f", help="Lợi nhuận sau thuế", step=NUMBER_INPUT_STEP)
-                total_assets = st.number_input("Tổng tài sản", value=MANUAL_DEFAULTS["TotalAssets"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
-            with business_right:
-                nii = st.number_input("NII", value=MANUAL_DEFAULTS["NetInterestIncome"], min_value=0.01, format="%.2f", help="Thu nhập lãi thuần", step=NUMBER_INPUT_STEP)
-                equity = st.number_input("Vốn chủ sở hữu", value=MANUAL_DEFAULTS["Equity"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
+            lnst = st.number_input("LNST", value=float(initial["LNST"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_lnst_{mode}_{original_name}")
+            nii = st.number_input("NII", value=float(initial["NetInterestIncome"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_nii_{mode}_{original_name}")
+            total_assets = st.number_input("Tổng tài sản", value=float(initial["TotalAssets"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_assets_{mode}_{original_name}")
+            equity = st.number_input("Vốn chủ sở hữu", value=float(initial["Equity"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_equity_{mode}_{original_name}")
             st.markdown("</div>", unsafe_allow_html=True)
         with funding_col:
             st.markdown('<div class="input-group"><p class="input-group-title">🏦 Nguồn vốn</p>', unsafe_allow_html=True)
-            casa = st.number_input("CASA", value=MANUAL_DEFAULTS["CASA"], min_value=0.01, format="%.2f", help="Tiền gửi không kỳ hạn", step=NUMBER_INPUT_STEP)
-            total_deposit = st.number_input("Tổng tiền gửi", value=MANUAL_DEFAULTS["TotalDeposit"], min_value=0.01, format="%.2f", help="Tổng tiền gửi khách hàng", step=NUMBER_INPUT_STEP)
+            casa = st.number_input("CASA", value=float(initial["CASA"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_casa_{mode}_{original_name}")
+            total_deposit = st.number_input("Tổng tiền gửi", value=float(initial["TotalDeposit"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_deposit_{mode}_{original_name}")
             st.markdown("</div>", unsafe_allow_html=True)
         with credit_col:
             st.markdown('<div class="input-group"><p class="input-group-title">💳 Tín dụng</p>', unsafe_allow_html=True)
-            credit_left, credit_right = st.columns(2)
-            with credit_left:
-                group1 = st.number_input("Nhóm 1", value=MANUAL_DEFAULTS["Group1"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
-                group2 = st.number_input("Nhóm 2", value=MANUAL_DEFAULTS["Group2"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
-                group3 = st.number_input("Nhóm 3", value=MANUAL_DEFAULTS["Group3"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
-            with credit_right:
-                group4 = st.number_input("Nhóm 4", value=MANUAL_DEFAULTS["Group4"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
-                group5 = st.number_input("Nhóm 5", value=MANUAL_DEFAULTS["Group5"], min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP)
-                provision = st.number_input("DPRR", value=MANUAL_DEFAULTS["Provision"], min_value=0.01, format="%.2f", help="Dự phòng rủi ro tín dụng", step=NUMBER_INPUT_STEP)
+            group1 = st.number_input("Nhóm 1", value=float(initial["Group1"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_group1_{mode}_{original_name}")
+            group2 = st.number_input("Nhóm 2", value=float(initial["Group2"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_group2_{mode}_{original_name}")
+            group3 = st.number_input("Nhóm 3", value=float(initial["Group3"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_group3_{mode}_{original_name}")
+            group4 = st.number_input("Nhóm 4", value=float(initial["Group4"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_group4_{mode}_{original_name}")
+            group5 = st.number_input("Nhóm 5", value=float(initial["Group5"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_group5_{mode}_{original_name}")
+            provision = st.number_input("DPRR", value=float(initial["Provision"]), min_value=0.01, format="%.2f", step=NUMBER_INPUT_STEP, key=f"dialog_provision_{mode}_{original_name}")
             st.markdown("</div>", unsafe_allow_html=True)
-        preview_col, add_col = st.columns(2)
-        with preview_col:
-            preview_requested = st.form_submit_button("🔍 PHÂN TÍCH THỬ", use_container_width=True)
-        with add_col:
-            add_requested = st.form_submit_button("➕ THÊM NGÂN HÀNG VÀO DATASET", use_container_width=True, type="primary")
 
-    manual_data = {"Bank": bank_name.strip(), "LNST": lnst, "NetInterestIncome": nii, "TotalAssets": total_assets, "Equity": equity, "CASA": casa, "TotalDeposit": total_deposit, "Group1": group1, "Group2": group2, "Group3": group3, "Group4": group4, "Group5": group5, "Provision": provision}
-    if preview_requested:
-        st.toast("Dashboard đã được cập nhật.", icon="✅")
-    return manual_data, add_requested, preview_requested
+        bank_data = {"Bank": bank_name.strip(), "LNST": lnst, "NetInterestIncome": nii, "TotalAssets": total_assets, "Equity": equity, "CASA": casa, "TotalDeposit": total_deposit, "Group1": group1, "Group2": group2, "Group3": group3, "Group4": group4, "Group5": group5, "Provision": provision}
+        preview_col, save_col = st.columns(2)
+        with preview_col:
+            preview_requested = st.button("📋 Preview Analysis", use_container_width=True, key=f"preview_{mode}_{original_name}")
+        with save_col:
+            save_requested = st.button("💾 Update" if is_editing else "💾 Save to Master Dataset", use_container_width=True, type="primary", key=f"save_{mode}_{original_name}")
+
+        if preview_requested:
+            preview_name = bank_data["Bank"] or "Ngân hàng đang nhập"
+            st.divider()
+            st.markdown("### Kết quả phân tích tạm thời")
+            render_bank_analysis(preview_name, bank_data, instance_key=f"dialog_preview_{mode}_{original_name}")
+
+        if save_requested:
+            if not bank_data["Bank"]:
+                st.error("Vui lòng nhập Tên ngân hàng trước khi lưu.")
+                return
+            if is_editing:
+                st.session_state.master_data.loc[st.session_state.master_data["Bank"].astype(str) == original_name, REQUIRED_COLUMNS] = [bank_data[column] for column in REQUIRED_COLUMNS]
+            elif bank_data["Bank"] in set(st.session_state.master_data["Bank"].astype(str).str.strip()):
+                st.error(f"Ngân hàng '{bank_data['Bank']}' đã tồn tại.")
+                return
+            else:
+                st.session_state.master_data = pd.concat([st.session_state.master_data, pd.DataFrame([bank_data])], ignore_index=True)[REQUIRED_COLUMNS]
+            st.rerun()
+
+    bank_editor()
 
 
 def load_uploaded_data(uploaded_file):
@@ -234,49 +253,53 @@ def merge_uploaded_data(uploaded_data):
     return overwritten
 
 
-def add_manual_bank(manual_data):
-    """Kiểm tra và thêm một hàng nhập tay vào dataset chung mà không ghi đè dữ liệu cũ."""
-    bank_name = manual_data["Bank"]
-    if not bank_name:
-        st.error("Vui lòng nhập Tên ngân hàng trước khi thêm vào dataset.")
-        return False
-    existing_names = st.session_state.master_data["Bank"].astype(str).str.strip()
-    if bank_name in set(existing_names):
-        st.error(f"Ngân hàng '{bank_name}' đã tồn tại. Hãy đổi tên hoặc cập nhật qua file upload.")
-        return False
-    manual_row = pd.DataFrame([manual_data], columns=REQUIRED_COLUMNS)
-    st.session_state.master_data = pd.concat([st.session_state.master_data, manual_row], ignore_index=True)[REQUIRED_COLUMNS]
-    st.success(f"Ngân hàng {bank_name} đã được thêm thành công vào dataset tích lũy!")
-    return True
+# Dataset duy nhất cho cả file upload và dữ liệu nhập tay; không bị mất khi Streamlit rerun.
+if "master_data" not in st.session_state:
+    st.session_state.master_data = pd.DataFrame(columns=REQUIRED_COLUMNS)
+if "uploaded_file_signature" not in st.session_state:
+    st.session_state.uploaded_file_signature = None
 
+with st.sidebar:
+    st.header("Quản lý dữ liệu")
+    uploaded_file = st.file_uploader("📤 Tải dữ liệu ngân hàng", type=["xlsx", "csv"], help="Cột bắt buộc: " + ", ".join(REQUIRED_COLUMNS))
+    if uploaded_file is not None:
+        # Chỉ merge khi người dùng thực sự chọn file mới, tránh ghi đè chỉnh sửa ở các rerun sau.
+        file_signature = hashlib.sha256(uploaded_file.getvalue()).hexdigest()
+        if file_signature != st.session_state.uploaded_file_signature:
+            uploaded_data = load_uploaded_data(uploaded_file)
+            overwritten_count = merge_uploaded_data(uploaded_data)
+            st.session_state.uploaded_file_signature = file_signature
+            st.success(f"Đã nhập {len(uploaded_data)} ngân hàng ({overwritten_count} bản ghi được cập nhật).")
+
+    if st.button("➕ Add Manual Bank", use_container_width=True, type="primary"):
+        open_bank_dialog("add")
+
+    st.divider()
+    st.subheader("Data Management")
+    if st.session_state.master_data.empty:
+        st.caption("Chưa có ngân hàng trong dataset.")
+    else:
+        st.dataframe(st.session_state.master_data[["Bank"]], use_container_width=True, hide_index=True)
+        managed_bank = st.selectbox("Chọn ngân hàng", st.session_state.master_data["Bank"].astype(str).tolist(), key="managed_bank")
+        edit_col, delete_col = st.columns(2)
+        with edit_col:
+            if st.button("✏️ Edit", use_container_width=True):
+                bank_row = st.session_state.master_data.loc[st.session_state.master_data["Bank"].astype(str) == managed_bank].iloc[0]
+                open_bank_dialog("edit", bank_row)
+        with delete_col:
+            if st.button("🗑️ Delete", use_container_width=True):
+                st.session_state.master_data = st.session_state.master_data.loc[st.session_state.master_data["Bank"].astype(str) != managed_bank].reset_index(drop=True)
+                # Xóa lựa chọn cũ để selectbox/multiselect không giữ tên ngân hàng vừa bị xóa.
+                st.session_state.pop("primary_bank", None)
+                st.session_state.pop("additional_banks", None)
+                st.rerun()
 
 st.title("🏦 BankHealth Analyzer")
 st.caption("Bảng điều khiển phân tích sức khỏe tài chính ngân hàng")
 
-# Dataset duy nhất cho cả file upload và dữ liệu nhập tay; không bị mất khi Streamlit rerun.
-if "master_data" not in st.session_state:
-    st.session_state.master_data = pd.DataFrame(columns=REQUIRED_COLUMNS)
-
-uploaded_file = st.file_uploader("📤 Tải dữ liệu ngân hàng", type=["xlsx", "csv"], help="Cột bắt buộc: " + ", ".join(REQUIRED_COLUMNS))
-if uploaded_file is not None:
-    uploaded_data = load_uploaded_data(uploaded_file)
-    overwritten_count = merge_uploaded_data(uploaded_data)
-    st.success(f"Đã nhập {len(uploaded_data)} ngân hàng vào dataset tích lũy ({overwritten_count} ngân hàng được cập nhật).")
-
-# Form luôn hiển thị, kể cả sau khi upload, để người dùng có thể tiếp tục bổ sung dữ liệu thủ công.
-manual_data, add_requested, preview_requested = render_manual_form()
-if add_requested:
-    add_manual_bank(manual_data)
-
-if preview_requested:
-    preview_name = manual_data["Bank"] or "Ngân hàng đang phân tích"
-    st.markdown("### Kết quả phân tích thử")
-    render_bank_analysis(preview_name, manual_data, instance_key="manual_preview")
-
 master_data = st.session_state.master_data
 if master_data.empty:
-    if not preview_requested:
-        st.info("Dataset hiện trống. Hãy tải file hoặc nhập tay rồi nhấn “Thêm ngân hàng vào dataset”.")
+    st.info("Dataset hiện trống. Hãy tải file hoặc dùng nút “Add Manual Bank” ở thanh bên.")
 else:
     # Cả dữ liệu upload và nhập tay đều được lấy từ cùng một danh sách ngân hàng.
     bank_names = master_data["Bank"].astype(str).unique().tolist()
